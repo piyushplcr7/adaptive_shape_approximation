@@ -1,3 +1,6 @@
+#ifndef ADAPTIVEALGORITHMHPP
+#define ADAPTIVEALGORITHMHPP
+
 #include "functionals.hpp"
 #include "parametrized_circular_arc.hpp"
 #include "parametrized_fourier_sum.hpp"
@@ -241,3 +244,5 @@ int main() {
 
   return 0;
 }
+
+#endif

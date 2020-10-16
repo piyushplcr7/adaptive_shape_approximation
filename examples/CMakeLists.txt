@@ -9,8 +9,7 @@ set(CMAKE_CXX_FLAGS "-std=c++11")
 add_definitions(-DMM=$(mm) -DNN=$(nn) -DVEL=$(vel))
 
 include_directories(${PROJECT_SOURCE_DIR}/include)
-include_directories(${PROJECT_SOURCE_DIR}/external/Code/BEM/2DParametricBEM/include)
-include_directories(${PROJECT_SOURCE_DIR}/external/Code/BEM/CppHilbert/Library/source)
+include_directories(${PROJECT_SOURCE_DIR}/external/2DParametricBEM/include)
 include_directories(/usr/include/eigen3)
 
 add_executable(quadapprox quad_approx.cpp)

@@ -1,3 +1,6 @@
+#ifndef SHAPECALCULUSHPP
+#define SHAPECALCULUSHPP
+
 #include "abstract_bem_space.hpp"
 #include "continuous_space.hpp"
 #include "gauleg.hpp"
@@ -54,6 +57,8 @@ double innerPdt(const Eigen::VectorXd &vec1, const Eigen::VectorXd &vec2,
  * elems based on the inner product a^T A b for two vectors a and b. The output
  * matrix contains normalized columns.
  *
+ * WARNING: INEFFICIENT IMPLEMENTATION
+ *
  * @param elems The matrix whose columns are to be orthonormalized
  * @param A The matrix which defines the inner product between columns of elems
  *
@@ -79,11 +84,12 @@ Eigen::MatrixXd GramSchmidtOrtho(const Eigen::MatrixXd &elems,
 /*
  * This function computes the exact shape gradient for the shape functional :
  * \f$ \int_{\Gamma} f(x) dx = \int_{\Gamma} \operatorname{div}F(x) dx \f$. The
- * shape gradient evaluation is based on the function d which is provided in the
- * procedural form.
+ * shape gradient formula is based on normal-perturbation model where the
+ * function d specifies the magnitude of normal perturbation on the boundary.
  *
  * @tparam F template parameter for f. Should support evaluation operator.
- * @param mesh Parametric mesh object which defines \f$ \Omega_0 \f$
+ * @param mesh Parametric mesh object which defines the reference shape \f$
+ * \Omega_0 \f$
  * @param f input of type F
  * @param d Perturbation field
  * @param order Order for numerical quadrature
@@ -94,14 +100,19 @@ template <typename F>
 double shapeGradient(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
                      const std::function<double(Eigen::Vector2d)> &d,
                      unsigned order) {
+  // Initializing
   double shape_gradient = 0;
+  // Getting information about the panels
   unsigned numpanels = mesh.getNumPanels();
   parametricbem2d::PanelVector panels = mesh.getPanels();
+  // Evaluating the shape gradient formula panelwise
   for (unsigned i = 0; i < numpanels; ++i) {
     parametricbem2d::AbstractParametrizedCurve &pi = *panels[i];
+    // Shape gradient formula, pulled back under parameterization pi
     auto integrand = [&](double s) {
       return d(pi(s)) * f(pi(s)) * pi.Derivative(s).norm();
     };
+    // Adding up individual contributions
     shape_gradient += parametricbem2d::ComputeIntegral(integrand, -1, 1, order);
   }
   return shape_gradient;
@@ -110,8 +121,8 @@ double shapeGradient(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
 /*
  * This function computes the exact shape Hessian for the shape functional :
  * \f$ \int_{\Gamma} f(x) dx = \int_{\Gamma} \operatorname{div}F(x) dx \f$. The
- * shape gradient evaluation is based on the function d which is provided in the
- * procedural form.
+ * shape gradient evaluation is based on normal-perturbation model where the
+ * function d specifies the magnitude of normal perturbation on the boundary.
  *
  * @tparam F template parameter for f. Should support evaluation operator and a
  * 'grad' method for evaluating the gradient.
@@ -126,68 +137,50 @@ template <typename F>
 double shapeHessian(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
                     const std::function<double(Eigen::Vector2d)> &d,
                     unsigned order) {
+  // Initializing
   double shape_hessian = 0;
+  // Getting info about the mesh panels
   unsigned numpanels = mesh.getNumPanels();
   parametricbem2d::PanelVector panels = mesh.getPanels();
+  // Evaluating the shape hessian panelwise
   for (unsigned i = 0; i < numpanels; ++i) {
     parametricbem2d::AbstractParametrizedCurve &pi = *panels[i];
+    // Shape hessian formula, pulled back under the parameterization pi
     auto integrand = [&](double s) {
       Eigen::Vector2d tangent = pi.Derivative(s);
+      // Finding the outward normal (assuming anti-clockwise curve)
       Eigen::Vector2d normal;
       normal << tangent(1), -tangent(0);
       normal /= normal.norm();
       Eigen::MatrixXd M(2, 2);
       M << pi.Derivative(s), pi.DoubleDerivative(s);
+      // Curvature of the boundary
       double kappa = M.determinant() / std::pow(pi.Derivative(s).norm(), 3);
       return std::pow(d(pi(s)), 2) *
              (f.grad(pi(s)).dot(normal) + kappa * f(pi(s))) *
              pi.Derivative(s).norm();
     };
+    // Adding up the individual contributions
     shape_hessian += parametricbem2d::ComputeIntegral(integrand, -1, 1, order);
   }
   return shape_hessian;
 }
 
-/*template <typename F>
-double evalFunctional(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
-                      const std::function<double(Eigen::Vector2d)> &d, double t,
-                      unsigned order) {
-  double functional = 0;
-  unsigned numpanels = mesh.getNumPanels();
-  parametricbem2d::PanelVector panels = mesh.getPanels();
-  for (unsigned i = 0; i < numpanels; ++i) {
-    parametricbem2d::AbstractParametrizedCurve &pi = *panels[i];
-    auto integrand = [&](double s) {
-      Eigen::Vector2d tangent = pi.Derivative(s);
-      Eigen::Vector2d normal;
-      normal << tangent(1), -tangent(0);
-      normal /= normal.norm();
-      Eigen::MatrixXd DT_t = Eigen::MatrixXd::Identity(2, 2);
-      Eigen::MatrixXd grad_P = ;
-      Eigen::MatrixXd grad_nu = ;
-      Eigen::Vector2d grad_d = ;
-      DT_t += t * ();
-      Eigen::Vector2d x_hat = pi(s);
-      Eigen::Vector2d T_t_x_hat = x_hat + t * d(x_hat) * normal;
-      return F(T_t_x_hat).dot(cofactor * normal) * pi.Derivative(s).norm();
-    };
-    functional += parametricbem2d::ComputeIntegral(integrand, -1, 1, order);
-  }
-  return functional;
-}*/
-
 /*
- * This function computes the discrete shape gradient for the shape functional :
- * \f$ \int_{\Gamma} f(x) dx = \int_{\Gamma} \operatorname{div}F(x) dx \f$. The
- * shape gradient evaluation is based on the normal velocity field d which is
- * provided in the form of coefficients for a function in the space \f$ S^0_1
- * \f$
+ * This function computes the shape gradient for the domain integral shape
+ * functional : \f$ \int_{\Omega} f(x) dx = \int_{\Omega} \operatorname{div}F(x)
+ * dx \f$. The shape gradient formula is based on the normal perturbation model
+ * where the normal perturbations are modulated by the function d on the
+ * boundary. For this function, d lies in a Boundary Element Space and specified
+ * through two arguments: Vector of coefficients and the type of BEM space
+ *
  *
  * @tparam F template parameter for f. Should support evaluation operator.
  * @param mesh Parametric mesh object which defines \f$ \Omega_0 \f$
  * @param f input of type F
- * @param d Perturbation field
+ * @param d Coefficients for the perturbation field lying in BEM space
  * @param order Order for numerical quadrature
+ * @param space BEM space in which the function d lies
  *
  * @return The shape gradient
  */
@@ -199,18 +192,18 @@ double shapeGradient(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
   unsigned numpanels = mesh.getNumPanels();
   parametricbem2d::PanelVector panels = mesh.getPanels();
 
-  // Defining the BEM space
-  // parametricbem2d::ContinuousSpace<1> space;
+  // Getting BEM space info
+  // Number of reference shape functions
   unsigned q = space.getQ();
+  // Dimension of the space
   unsigned dim = space.getSpaceDim(numpanels);
   if (d.rows() != dim) {
     throw std::runtime_error(
         "Velocity field vector not valid! Please check the dimensions.");
   }
 
-  // Initializing the vector of basis function integrals
+  // Initializing a vector which contains integrals for basis functions
   Eigen::VectorXd V = Eigen::VectorXd::Constant(dim, 0);
-  // std::cout << "Size of V = " << dim << std::endl;
 
   // Looping over all panels
   for (unsigned i = 0; i < numpanels; ++i) {
@@ -223,32 +216,34 @@ double shapeGradient(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
         return space.evaluateShapeFunction(k, s) * f(pi(s)) *
                pi.Derivative(s).norm();
       };
+      // Evaluating the local integral
       double loc_integ =
           parametricbem2d::ComputeIntegral(integrand, -1, 1, order);
 
       // Local to global mapping
       unsigned I = space.LocGlobMap2(k + 1, i + 1, mesh) - 1;
-      //  std::cout << "Position " << I << " in V is filled" << std::endl;
       V(I) += loc_integ;
     }
   }
-
+  // Summing contributions from all the basis functions
   return d.dot(V);
 }
 
 /*
  * This function computes the exact shape Hessian for the shape functional :
  * \f$ \int_{\Gamma} f(x) dx = \int_{\Gamma} \operatorname{div}F(x) dx \f$. The
- * shape gradient evaluation is based on the normal velocity field d which is
- * provided in the form of coefficients for a function in the space \f$ S^0_1
- * \f$
+ * shape gradient evaluation is based on the normal perturbation model
+ * where the normal perturbations are modulated by the function d on the
+ * boundary. For this function, d is assumed to lie in a Boundary Element Space
+ * which is provided as an argument along with the vector of coefficients.
  *
  * @tparam F template parameter for f. Should support evaluation operator and a
  * 'grad' method for evaluating the gradient.
  * @param mesh Parametric mesh object which defines \f$ \Omega_0 \f$
  * @param f input of type F
- * @param d Perturbation field
+ * @param d Coefficients for the perturbation field lying in BEM space
  * @param order Order for numerical quadrature
+ * @param space BEM space in which the function d lies
  *
  * @return The shape hessian
  */
@@ -260,35 +255,39 @@ double shapeHessian(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
   unsigned numpanels = mesh.getNumPanels();
   parametricbem2d::PanelVector panels = mesh.getPanels();
 
-  // Defining the BEM space
-  // parametricbem2d::ContinuousSpace<1> space;
+  // Getting BEM space info
+  // Number of reference shape functions
   unsigned q = space.getQ();
+  // Dimension of the space
   unsigned dim = space.getSpaceDim(numpanels);
 
-  // Initializing the matrix for integrals of the basis functions
+  // Initializing a matrix for integrals of pairs of basis functions
   Eigen::MatrixXd M = Eigen::MatrixXd::Constant(dim, dim, 0);
 
   // Looping over all panels
   for (unsigned i = 0; i < numpanels; ++i) {
     // Panel for local integral
     parametricbem2d::AbstractParametrizedCurve &pi = *panels[i];
+    // Looping over RSFs
     for (unsigned k = 0; k < q; ++k) {
       for (unsigned l = 0; l < q; ++l) {
         // Lambda function for the local integrand
         auto integrand = [&](double s) {
           Eigen::Vector2d tangent = pi.Derivative(s);
+          // Getting the outward normal
           Eigen::Vector2d normal;
           normal << tangent(1), -tangent(0);
           normal /= normal.norm();
           Eigen::MatrixXd M(2, 2);
           M << pi.Derivative(s), pi.DoubleDerivative(s);
+          // The curvature of the boundary
           double kappa = M.determinant() / std::pow(pi.Derivative(s).norm(), 3);
           return space.evaluateShapeFunction(k, s) *
                  space.evaluateShapeFunction(l, s) *
                  (f.grad(pi(s)).dot(normal) + kappa * f(pi(s))) *
                  pi.Derivative(s).norm();
         };
-
+        // Evaluating the local integral
         double loc_int =
             parametricbem2d::ComputeIntegral(integrand, -1, 1, order);
 
@@ -596,7 +595,7 @@ getRelevantQuantities(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
           Eigen::MatrixXd M(2, 2);
           M << pi.Derivative(s), pi.DoubleDerivative(s);
           double kappa = M.determinant() / std::pow(pi.Derivative(s).norm(), 3);
-          //std::cout << "Kappa = " << kappa << std::endl;
+          // std::cout << "Kappa = " << kappa << std::endl;
           return f.grad(pi(s)).dot(normal) + kappa * f(pi(s));
         };
 
@@ -623,7 +622,8 @@ getRelevantQuantities(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
         double integral_lhs =
             parametricbem2d::ComputeIntegral(integrand_lhs, -1, 1, order);
 
-        //std::cout << "(shape hessian) Loc integ for panel " << i << " : " << integral_lhs << std::endl;
+        // std::cout << "(shape hessian) Loc integ for panel " << i << " : " <<
+        // integral_lhs << std::endl;
         double integral_h1 =
             parametricbem2d::ComputeIntegral(integrand_h1, -1, 1, order);
         double integral_l2 =
@@ -639,8 +639,9 @@ getRelevantQuantities(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
       } // loop over l ends
       double loc_integ =
           parametricbem2d::ComputeIntegral(integrand_V, -1, 1, order);
-      //std::cout << "Local integral for the shape gradient term: " << loc_integ << std::endl;
-      //std::cout << "(shape gradient) Loc integ for panel " << i << " : " << loc_integ << std::endl;
+      // std::cout << "Local integral for the shape gradient term: " <<
+      // loc_integ << std::endl; std::cout << "(shape gradient) Loc integ for
+      // panel " << i << " : " << loc_integ << std::endl;
       // Local to global mapping
       unsigned I = space.LocGlobMap2(k + 1, i + 1, mesh) - 1;
       V(I) += loc_integ;
@@ -655,13 +656,14 @@ getRelevantQuantities(const parametricbem2d::ParametrizedMesh &mesh, const F &f,
 
 /*
  * Returns the discrete quadratic approximation without the constant term: shape
- * gradient + shape hessian
+ * gradient + shape hessian. The perturbation field d is assumed to lie in a BEM
+ * space provided in the arguments.
  *
  * @tparam F template parameter for f. Should support evaluation operator and a
  * 'grad' method for evaluating the gradient.
  * @param mesh Parametric mesh object which defines \f$ \Omega_0 \f$
  * @param f input of type F
- * @param d Perturbation field
+ * @param d Vector of coefficients for the perturbation field
  * @param order Order for numerical quadrature
  * @param space BEM space in which the perturbation field lies
  *
@@ -746,3 +748,5 @@ double low_rank_approx(const parametricbem2d::ParametrizedMesh &mesh,
       shapeHessian(mesh, f, dstar, order, space);
   return real_low_rank;
 }
+
+#endif
