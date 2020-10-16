@@ -1,0 +1,3 @@
+[submodule "external/2DParametricBEM"]
+	path = external/2DParametricBEM
+	url = https://gitlab.ethz.ch/ppanchal/2dparametricbem.git
